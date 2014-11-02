@@ -1,10 +1,12 @@
 #!/bin/bash
 
 # define locations of input files
-thread_metrics_tree_string='data/top20_thread_metrics_tree_string.csv'
 #discussions_compact_text='data/top20_discussions_compact_text.csv'
 discussions_compact_text='../../WikiTalkParser/discussions/discussions_text.csv'
-thread_titles='data/top20_thread_titles.csv'
+#thread_titles='data/top20_thread_titles.csv'
+thread_titles='../../WikiTalkParser/discussions/thread_titles.tsv'
+#thread_metrics_tree_string='data/top20_thread_metrics_tree_string.csv'
+thread_metrics_tree_string='../../ContropediaTalk/discussion-metrics/thread_metrics.csv'
 
 # LOAD MYSQL CONFIG
 source db.inc
