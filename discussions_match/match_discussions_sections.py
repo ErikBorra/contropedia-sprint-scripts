@@ -7,7 +7,7 @@ import urllib, htmlentitydefs
 from time import mktime, strptime
 from datetime import date, datetime
 from locale import setlocale, LC_ALL
-setlocale(LC_ALL, 'en_GB.utf8')
+setlocale(LC_ALL, 'en_GB.UTF-8')
 
 # Open required data that was generated via the the generate_article_threads_data.sh
 try:
