@@ -97,18 +97,19 @@ for row in discussions:
                   "permalink": "",
                   "revisions": [],
                   "article_sections": [],
-                  "match": 0}
+                  "match": 0,
+                  "comments": {}}
         threadidx[th.lower()] = idx
     if is_null_col(row["timestamp"]):
         curthread = th
         continue
     # Collect and compute useful metas on the threads
     dt = parse_ts(int(row['timestamp'])*60)
-    if not thread['date_min']:
+    if 'date_min' not in thread:
         thread['date_min'] = dt
     else:
         thread['date_min'] = min(thread['date_min'], dt)
-    if not thread['date_max']:
+    if 'date_max' not in thread:
         thread['date_max'] = dt
     else:
         thread['date_max'] = max(thread['date_max'], dt)
@@ -121,7 +122,15 @@ for row in discussions:
     # Save a field containing the concatenated cleaned up text from all comments
     thread['fulltext'] += " " + clean_text(row["text"])
     # And one as an array of tuples (text, timestamp) for each comment for use in the actors matching part
-    thread['timestamped_text'].append((clean_text(row["text"]), row['timestamp']))
+    thread['timestamped_text'].append((clean_text(row["text"]), row['timestamp'], int(row['id'])))
+    #Save comment (with thread structure)
+    comment_id = int(row["id"])
+    parent_id = int(row["parent_id"])
+    thread['comments'][comment_id] = {'parent': parent_id, 'children': [], 'date': dt, 'ts': int(row['timestamp'])*60, 'author': row['author_name'], 'text': row['text']}
+    if parent_id in thread['comments']:
+		thread['comments'][parent_id]['children'].append(str(comment_id))
+		
+    
 # Save last current thread since we won't find a new one after it
 if thread:
     threads.append(thread)
@@ -240,8 +249,8 @@ for t in threads:
         print "MISSING:", t['name'], t['nb_messages'], t['nb_users']
 
 #Save the threads data for debug purposes
-with open('threads.json', 'w') as jsonf:
-    json.dump(threads, jsonf, ensure_ascii=False)
+#~ with open('threads.json', 'w') as jsonf:
+    #~ json.dump(threads, jsonf, ensure_ascii=False)
 
 # Save the built data on each article/thread match as a csv
 make_csv_line = lambda arr: ",".join(['"'+str(a).replace('"', '""')+'"' if ',' in str(a) else str(a) for a in arr])
@@ -262,8 +271,12 @@ with open('threads_matched.csv', 'w') as csvf:
 # Identify page's actors within threads
 make_csv_line = lambda arr: "\t".join([str(a) for a in arr])
 headers = ["article_title", "actor", "thread", "thread_permalink", "actor_in_thread_title", "n_matches_in_thread", "comments_timestamps"]
-with open('actors_matched.csv', 'w') as csvf:
+headers2 = ["article_title", "actor", "thread", "thread_permalink", "comment_text", "comment_date", "comment_timestamp", "comment_author", "comment_id", "comment_parent_id", "comment_children_ids", "actor_in_comment", "actor_in_previous_comments", "actor_in_thread_title", "n_matches_in_thread", "n_comments_in_thread"]
+
+with open('actors_matched.csv', 'w') as csvf, open('actors_matched_comments.csv', 'w') as csvf2:
     print >> csvf, make_csv_line(headers)
+    print >> csvf2, make_csv_line(headers2)
+    matches = 0
     # Iterate on all of the page's actors as identified within Eric's database
     for actor in actors:
         # build a regexp to blurry match words similar to the actor by replacing with ".?" every non alphanumeric (or space) character
@@ -278,12 +291,24 @@ with open('actors_matched.csv', 'w') as csvf:
             # Search for the actor in each comment, sum the matches and list the corresponding timestamps
             all_matches = 0
             timestamps = []
-            for te, ti in thread["timestamped_text"]:
+            ids = []
+            for te, ti, cid in thread["timestamped_text"]:
                 n_match = len(re_actor.findall(te.lower()))
                 if n_match:
                     all_matches += n_match
                     timestamps.append(ti)
+                    ids.append(cid)
             # If there's at least one match, dump a tsv line
             if (match_title or all_matches) and thread['permalink']:
-                print >> csvf, make_csv_line([page_title, actor, thread['rawname'], thread['permalink'], all_matches, match_title, timestamps])
+                print >> csvf, make_csv_line([page_title, actor, thread['rawname'], thread['permalink'], all_matches, match_title, timestamps, ids])
+                first_ts = 0 if match_title else timestamps[0]
+                matches += 1
+                # Write on a second tsv file a line for each comment belonging to a thread that has been matched with the actor
+                for c in thread['comments']:
+                    comm = thread['comments'][c]
+                    match_comment = 1 if c in ids else 0
+                    already_matched = 1 if (timestamps and comm['ts']>int(timestamps[0])*60) else 0					
+                    print >> csvf2, make_csv_line([page_title, actor, thread['rawname'], thread['permalink'], comm['text'], comm['date'], comm['ts'], comm['author'], c, comm['parent'], '|'.join(comm['children']), match_comment, already_matched, match_title, len(ids), len(thread['comments'])])
+    print '%d actors and %d threads -> %d actor-thread matches found' %(len(actors), len(threads), matches)
+
 
