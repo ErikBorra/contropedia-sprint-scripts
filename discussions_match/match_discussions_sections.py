@@ -270,7 +270,7 @@ with open('threads_matched.csv', 'w') as csvf:
 
 # Identify page's actors within threads
 make_csv_line = lambda arr: "\t".join([str(a) for a in arr])
-headers = ["article_title", "actor", "thread", "thread_permalink", "actor_in_thread_title", "n_matches_in_thread", "comments_timestamps"]
+headers = ["article_title", "actor", "thread", "thread_permalink", "actor_in_thread_title", "n_matches_in_thread", "comments_timestamps", "comments_ids"]
 headers2 = ["article_title", "actor", "thread", "thread_permalink", "comment_text", "comment_date", "comment_timestamp", "comment_author", "comment_id", "comment_parent_id", "comment_children_ids", "actor_in_comment", "actor_in_previous_comments", "actor_in_thread_title", "n_matches_in_thread", "n_comments_in_thread"]
 
 with open('actors_matched.csv', 'w') as csvf, open('actors_matched_comments.csv', 'w') as csvf2:
