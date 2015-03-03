@@ -1,3 +1,4 @@
 MYSQLDB="contropedia"
 MYSQLUSER="contropedia"
 MYSQLPASS=""
+tmpdir="/tmp"
