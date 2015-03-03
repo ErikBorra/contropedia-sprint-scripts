@@ -89,6 +89,13 @@ if [ ! -s "$datadir/actors.tsv" ]; then
   echo "SELECT e.canonical FROM element e LEFT JOIN element_edit ee ON ee.element_id = e.id LEFT JOIN section s ON ee.section_id = s.id LEFT JOIN revisions r ON ee.to_revision_id = r.id LEFT JOIN article_revisions ar ON ar.revision_id = r.id LEFT JOIN article a ON ar.article_id = a.id WHERE a.title = '$page' GROUP BY canonical ORDER BY canonical" | mysql -u $MYSQLUSER -p$MYSQLPASS $MYSQLDB > "$datadir/actors.tsv"
 fi
 
+# Added by David on February 2015, please check :)
+# Extract association between edits and actors from the database 
+if [ ! -s "$datadir/actor_edits.tsv" ]; then
+  echo "SELECT e.canonical, ee.revision_id FROM element e INNER JOIN element_edit ee ON ee.element_id = e.id LEFT JOIN revisions r ON ee.to_revision_id = r.id LEFT JOIN article_revisions ar ON ar.revision_id = r.id LEFT JOIN article a ON ar.article_id = a.id WHERE a.title = '$page' AND e.type = 'links' | mysql -u $MYSQLUSER -p$MYSQLPASS $MYSQLDB > "$datadir/actor_edits.tsv"
+fi
+
+
 # Match discussions with article sections and actors, and assemble all data into $datadir/threads_matched.csv and $datadir/actors_matched.csv
 python match_discussions_sections.py "$page"
 
