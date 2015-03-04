@@ -9,6 +9,14 @@ from time import mktime, strptime
 from datetime import date, datetime
 from locale import setlocale, LC_ALL
 setlocale(LC_ALL, 'en_GB.UTF-8')
+import configparser
+import StringIO
+
+# read config file
+ini_str = '[root]\n' + open('../../config.cfg', 'r').read() # add fake section
+ini_fp = StringIO.StringIO(ini_str)
+settings = configparser.RawConfigParser()
+settings.readfp(ini_fp)
 
 #
 # *** PARAMETERS ***
@@ -26,8 +34,9 @@ TIME_WINDOW = 600
 # Open required data that was generated via the the generate_article_threads_data.sh
 try:
     page_title = sys.argv[1]
-    datadir = "data/%s" % page_title
-    os.chdir(datadir)
+    #datadir_discussions = "data/%s" % page_title
+    datadir_discussions="%s/%s/discussions" % (datadir,page_title)
+    os.chdir(datadir_discussions)
     with open('discussions.tsv') as csvf:
         discussions = list(csv.DictReader(csvf, delimiter="\t"))
     with open('revisions.tsv') as csvf:
