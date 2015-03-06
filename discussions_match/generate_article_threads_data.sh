@@ -5,12 +5,12 @@
 discussions_compact_text='../../WikiTalkParser/discussions/discussions_text.csv'
 thread_titles='../../WikiTalkParser/discussions/thread_titles.csv'
 thread_metrics_tree_string='../../ContropediaTalk/discussion-metrics/thread_metrics.csv'
-article_ids_titles='/home/erik/contropedia/talk_files/Article_ids_titles.csv'
 cache_dir='/var/www/contropedia/demo/experiment/cache'
 
 # LOAD MYSQL CONFIG
 #. ./db.inc
 . ../../config.cfg
+article_ids_titles="$tmpdir/Article_ids_titles.csv"
 
 # loop over set of files listed in Article_ids_titles.csv
 for page in $(cut -f2 $article_ids_titles) 
@@ -26,7 +26,7 @@ do
 
     # get list of revisions for an article and make revisions.tsv
     `sudo rm $tmpdir/revisions.tsv`
-    `echo "SELECT r.id, r.user, r.timestamp, r.hash, REPLACE(r.comment, '\n', ' ') AS comment FROM revisions r, article a, article_revisions ar WHERE r.id = ar.revision_id AND ar.article_id = a.id AND a.title = '${page}' INTO OUTFILE '$(tmpdir)/revisions.tsv' FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n'" | mysql -u $MYSQLUSER -p$MYSQLPASS $MYSQLDB`
+    `echo "SELECT r.id, r.user, r.timestamp, r.hash, REPLACE(r.comment, '\n', ' ') AS comment FROM revisions r, article a, article_revisions ar WHERE r.id = ar.revision_id AND ar.article_id = a.id AND a.title = '${page}' INTO OUTFILE '${tmpdir}/revisions.tsv' FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n'" | mysql -u $MYSQLUSER -p$MYSQLPASS $MYSQLDB`
     echo "rev_id\trev_user\trev_timestamp\trev_hash\trev_comment" > "$datadir/revisions.tsv"
     `cat $tmpdir/revisions.tsv >> $datadir/revisions.tsv`
 
@@ -54,7 +54,7 @@ do
     # Get the association of revisions with sections from the Contropedia database
     # original
     # select=$(echo "SELECT to_revision_id as revision_id, raw_element as section_name FROM element_edit ee, article_revisions ar, article a WHERE ee.to_revision_id = ar.revision_id AND ar.article_id = a.id AND a.title = '${page}' GROUP BY revision_id, section_name")
-    # better, as it actually matches section_name's instead of canonical elements?
+    # better, as it actually matches section_name's instead of canonical elements? @todo, is it better?
     select=$(echo "SELECT ee.to_revision_id AS revision_id, s.section_name AS section_name FROM element_edit ee, section s, article_revisions ar, article a WHERE ee.section_id = s.id AND ee.to_revision_id = ar.revision_id AND ar.article_id = a.id AND a.title = '${page}' GROUP BY revision_id, section_name")
     echo "$select" | mysql -u $MYSQLUSER -p$MYSQLPASS $MYSQLDB > "$datadir/revisions_sections.tsv"
 
@@ -77,11 +77,12 @@ do
     grep -P "^$pageid\t" $thread_titles | iconv -f "iso8859-1" -t "UTF-8" >> "$datadir/threads_links.tsv"
 
     # Extract actors from Contropedia database
+    # @todo, include anchor text to improve matching of actors / recall
     echo "SELECT e.canonical FROM element e LEFT JOIN element_edit ee ON ee.element_id = e.id LEFT JOIN section s ON ee.section_id = s.id LEFT JOIN revisions r ON ee.to_revision_id = r.id LEFT JOIN article_revisions ar ON ar.revision_id = r.id LEFT JOIN article a ON ar.article_id = a.id WHERE a.title = '$page' GROUP BY canonical ORDER BY canonical" | mysql -u $MYSQLUSER -p$MYSQLPASS $MYSQLDB > "$datadir/actors.tsv"
 
-    # Added by David on February 2015, please check :)
     # Extract association between edits and actors from the database 
-    echo "SELECT e.canonical, ee.revision_id FROM element e INNER JOIN element_edit ee ON ee.element_id = e.id LEFT JOIN revisions r ON ee.to_revision_id = r.id LEFT JOIN article_revisions ar ON ar.revision_id = r.id LEFT JOIN article a ON ar.article_id = a.id WHERE a.title = '$page' AND e.type = 'links' | mysql -u $MYSQLUSER -p$MYSQLPASS $MYSQLDB > "$datadir/actor_edits.tsv"
+    # @todo, include anchor text to improve matching of actors / recall
+    echo "SELECT e.canonical AS actor, ee.to_revision_id AS revision_id FROM element e INNER JOIN element_edit ee ON ee.element_id = e.id LEFT JOIN revisions r ON ee.to_revision_id = r.id LEFT JOIN article_revisions ar ON ar.revision_id = r.id LEFT JOIN article a ON ar.article_id = a.id WHERE a.title = '$page' AND e.type = 'links'" | mysql -u $MYSQLUSER -p$MYSQLPASS $MYSQLDB > "$datadir/actor_edits.tsv"
 
     # Match discussions with article sections and actors, and assemble all data into $datadir/threads_matched.csv and $datadir/actors_matched.csv
     echo "matching discussions for $page"
