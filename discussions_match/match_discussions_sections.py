@@ -35,7 +35,7 @@ TIME_WINDOW = 600
 try:
     page_title = sys.argv[1]
     #datadir_discussions = "data/%s" % page_title
-    datadir_discussions="%s/%s/discussions" % (datadir,page_title)
+    datadir_discussions="%s/%s/discussions" % (settings.get('root','datadir'),page_title)
     os.chdir(datadir_discussions)
     with open('discussions.tsv') as csvf:
         discussions = list(csv.DictReader(csvf, delimiter="\t"))
@@ -97,12 +97,15 @@ def convert_rev_ts(s):
 	if len(s)<10: print 'bad date:', s
 	date = None
 	try: 
-		time.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
+		date = time.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
 	except Exception as e:
 		try: 
-			date = time.strptime(s[:12], "%Y%m%d%H%M%S")
+			date = time.strptime(s, "%Y-%m-%d %H:%M:%S")
 		except Exception as e:
-			print 'ERROR parsing date: %s' % s
+			try: 
+                            date = time.strptime(s[:12], "%Y%m%d%H%M%S")
+                        except Exception as e:
+                            print 'ERROR parsing date: %s' % s
 	return date
 
 def time_match(rev_ts, comment_ts, TIME_WINDOW):
@@ -280,33 +283,33 @@ for row in revisions:
             
     #look for cooccurrences with comments by the same users at the same time (time window size for the match depends on parameter "TIME_WINDOW")
     if row["rev_user"] in user_comments:
-		for (comment_ts, comment_id, thread_id) in user_comments[row["rev_user"]]:
-			if time_match(row["rev_timestamp"], comment_ts, TIME_WINDOW):
-				if verbose: print "MATCH FOUND (USER TIME COOCCURRENCE):", row["rev_user"], row["rev_id"], row["rev_comment"], '/', t
-				threads[thread_id]['revisions_coocc'].append(rev_id)
-				n_cooccs += 1
-				try:
-					threads[thread_id]['article_sections_coocc'] += revisions_sec[rev_id]
-					n_cooccs_secs += 1
-				except:
-					if display_errors: sys.stderr.write('WARNING: revision %s could not be found in the correspondance list of revisions/sections\n' % rev_id)
-				threads[thread_id]['match_coocc'] += 1
-				
-				#save cooccurrences of comments with edits, and the corresponding actors
-				if rev_id in rev_actors:
-					for a in rev_actors[rev_id]:
-						if a not in actor_matches_coocc:
-							actor_matches_coocc[a] = {}
-						if thread_id not in actor_matches_coocc[a]:
-							actor_matches_coocc[a][thread_id] = {'comment_ids':[],'timestamps':[]}
-						actor_matches_coocc[a][thread_id]['comment_ids'].append(comment_id)
-						actor_matches_coocc[a][thread_id]['timestamps'].append(comment_ts)
-						if verbose: print "ACTOR / COMMENT MATCH FOUND (USER TIME COOCCURRENCE):", a, '/', t, ' (', threads[thread_id]['comments'][comment_id]['text'], ')'
-						n_cooccs_actors += 1
-						
-					#~ if comment_id not in actor_matches_coocc[a][thread_id]:
-						#~ actor_matches_coocc[a][thread_id][comment_id] = ('comment_ids':[],'timestamps':[])	
-					#~ actor_matches_coocc[a][thread_id][0]comment_id].append(rev_id)	
+        for (comment_ts, comment_id, thread_id) in user_comments[row["rev_user"]]:
+            if time_match(row["rev_timestamp"], comment_ts, TIME_WINDOW):
+                if verbose: print "MATCH FOUND (USER TIME COOCCURRENCE):", row["rev_user"], row["rev_id"], row["rev_comment"], '/', t
+                threads[thread_id]['revisions_coocc'].append(rev_id)
+                n_cooccs += 1
+                try:
+                    threads[thread_id]['article_sections_coocc'] += revisions_sec[rev_id]
+                    n_cooccs_secs += 1
+                except:
+                    if display_errors: sys.stderr.write('WARNING: revision %s could not be found in the correspondance list of revisions/sections\n' % rev_id)
+                threads[thread_id]['match_coocc'] += 1
+
+                #save cooccurrences of comments with edits, and the corresponding actors
+                if rev_id in rev_actors:
+                    for a in rev_actors[rev_id]:
+                        if a not in actor_matches_coocc:
+                            actor_matches_coocc[a] = {}
+                        if thread_id not in actor_matches_coocc[a]:
+                            actor_matches_coocc[a][thread_id] = {'comment_ids':[],'timestamps':[]}
+                        actor_matches_coocc[a][thread_id]['comment_ids'].append(comment_id)
+                        actor_matches_coocc[a][thread_id]['timestamps'].append(comment_ts)
+                        if verbose: print "ACTOR / COMMENT MATCH FOUND (USER TIME COOCCURRENCE):", a, '/', t, ' (', threads[thread_id]['comments'][comment_id]['text'], ')'
+                        n_cooccs_actors += 1
+
+                    #~ if comment_id not in actor_matches_coocc[a][thread_id]:
+                            #~ actor_matches_coocc[a][thread_id][comment_id] = ('comment_ids':[],'timestamps':[])	
+                    #~ actor_matches_coocc[a][thread_id][0]comment_id].append(rev_id)	
 
 print '%d total revisions' % n_revs
 print '%d revisions matched to comments via edit summary, and %d of these to some section' % (n_revs_comments, n_revs_comments_secs) 
