@@ -31,13 +31,16 @@ verbose = False
 #if True, errors and warning messages will be displayed
 display_errors = False
 
+#if True, data about thread index inconsistencies will be shown 
+check_thread_indexes = True
+
 #if True, the values of some variables, etc, will be shown
 debug = False
 
 #size of the time window (in seconds) to consider an edit and a comment by the same user to cooccur in time
 TIME_WINDOW = 600
 
-#if tru, the program will only consider the first 1000 revisions and the first 1000 comments
+#if True, the program will only consider the first 1000 revisions and the first 1000 comments
 test = False
 
 # Open required data that was generated via the the generate_article_threads_data.sh
@@ -128,19 +131,20 @@ threadidx = {}
 #~ comments_by_timestamp = {}
 user_comments = {}
 n_comments = 0
+idx = 0
 # Read data from David's discussions file line by line
 for row in discussions:
     # Skip lines without a thread title
     if not row['thread_title']:
         continue
     # Store in threads array previous thread object and create a new one whenever reaching a line with a different thread title
-    idx = len(threads)
+    #~ idx = len(threads)
     th = clean_thread_name(row['thread_title'])
     if th != curthread:
         curthread = th
         if thread:
             threads.append(thread)
-            idx += 1  
+            idx = len(threads)
         thread = {"index": idx,
                   "name": th,
                   "rawname": row['thread_title'].strip('=[] '),
@@ -212,16 +216,19 @@ for row in discussions:
     
 # Save last current thread since we won't find a new one after it
 if thread:
+    threadidx[thread['name'].lower()] = len(threads)	
     threads.append(thread)
 if print_statistics: print '%d threads and %d comments read' % (len(threads), n_comments)
 
 # Complete threads with their permalinks
 n_permalinks = 0
+n_permalinks_tot = 0
 for row in links:
     t = clean_thread_name(row['thread_title']).lower()
     if t in threadidx:
+        if threads[threadidx[t]]['permalink'] == "": n_permalinks += 1
         threads[threadidx[t]]['permalink'] = "http://en.wikipedia.org/wiki/%s#%s" % (row['talk_page'], urllib.quote(threads[threadidx[t]]['rawname'].replace(' ', '_')).replace('%', '.'))
-        n_permalinks += 1
+        n_permalinks_tot += 1
     else:
         if display_errors: sys.stderr.write("ERROR: could not match one thread from links: %s\n" % t)
 
@@ -236,7 +243,29 @@ for row in metrics:
     else:
         if display_errors: sys.stderr.write("ERROR: could not match one thread from metrics: %s\n" % t)
 
-if print_statistics: print '%d threads completed with permalink (%d%%) and %d with thread metrics (%d%%)' % (n_permalinks-1, (n_permalinks)*100/(len(threads)), n_metrics, (n_metrics+1)*100/(len(threads)+1))
+if print_statistics and len(threads) > 0: 
+	print '  %d threads in threadidx (%d%%), %d threads completed with thread metrics (%d%%)' % (len(threadidx), len(threadidx)*100/(len(threads)), n_metrics, (n_metrics)*100/(len(threads)))
+	print '  %d threads completed with permalinks (%d%%), %d distinct permalinks written (%d%%)'  % (n_permalinks_tot, (n_permalinks_tot)*100/(len(threads)), n_permalinks, (n_permalinks)*100/(len(threads)))
+
+#check thread indexes
+#Some inconsistencies are due to the fact that threadidx is not case sensitive
+#(and therefore two threads with the same title but different capitalizations could be collapsed)
+if check_thread_indexes:
+	missing = 0
+	incons = 0
+	for i in range(len(threads)):
+		if threads[i]['name'].lower() not in threadidx: 
+			print 'missing threadidx: ', i, threads[i]['name']
+			missing += 1
+		elif threads[i]['index'] != i or threadidx[threads[i]['name'].lower()] != i: 
+			index = threadidx[threads[i]['name'].lower()]
+			print 'Inconsistency in thread index: ', i, index
+			print str(threads[i]['index']) + '\t' + '('+str(len(threads[i]['comments']))+')' + '\t' + threads[i]['name'] + '\t' + threads[i]['permalink']
+			print str(threads[index]['index']) + '\t' + '('+str(len(threads[index]['comments']))+')' + '\t' + threads[index]['name'] + '\t' + threads[index]['permalink']
+			incons += 1	
+	print 'missing indexes: ', missing		
+	print 'inconsistent indexes: ', incons		
+
 
 revisions_sec = {}
 # Look for revisions referencing a thread as comment
@@ -496,7 +525,7 @@ with open('actors_matched.csv', 'w') as csvf, open('actors_matched_comments.csv'
                     	if display_errors: sys.stderr.write("ERROR trying to write comment matches")
                     	if display_errors: sys.stderr.write("%s: %s" % (type(e), e))
 	
-    print '\n%d actors and %d threads -> %d pairs matched overall' %(len(actors), len(threadidx), tot_pairs_matched)
+    print '\n%d actors and %d threads -> %d pairs matched overall' %(len(actors), len(threads), tot_pairs_matched)
     print '  -> via string match: %d actor-thread matches found' % pairs_matched
     print '  -> via edit/comment cooccurrences: %d actor-thread matches found' % cooccs_num
     print '%d total actor-comment matches found via string match' % tot_matches			
@@ -510,7 +539,9 @@ with open('actors_matched.csv', 'w') as csvf, open('actors_matched_comments.csv'
 	    matches_actors_coocc = sum([1 for t in threads if t['match_actors_coocc'] > 0])
 	    matches_actors_tot = sum([1 for t in threads if (t['match_actors'] > 0 or t['match_actors_coocc'] > 0)])    
 	    print "=================="
-	    print "MATCHED with ACTORS: %d threads out of %d (%s)" % (matches_actors_tot, len(threadidx), str(matches_actors_tot*100/len(threads))+"%")
+	    print "MATCHED with ACTORS: %d threads out of %d (%s)" % (matches_actors_tot, len(threads), str(matches_actors_tot*100/len(threads))+"%")
 	    print "   - via user edit/comment time cooccurrence:  %d threads (%s)" % (matches_actors_coocc, str(matches_actors_coocc*100/len(threads))+"%")
 	    print "   - via string match:  %d threads (%s)" % (matches_actors, str(matches_actors*100/len(threads))+"%")
 	    print "=================="
+
+
