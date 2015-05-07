@@ -21,15 +21,27 @@ settings.readfp(ini_fp)
 #
 # *** PARAMETERS ***
 #
+
+#if True, statistics about the execution will be displayed
+print_statistics = True
+
 #if True, messages about each match will be displayed
 verbose = False
+
 #if True, errors and warning messages will be displayed
 display_errors = False
+
+#if True, data about thread index inconsistencies will be shown 
+check_thread_indexes = True
+
 #if True, the values of some variables, etc, will be shown
 debug = False
+
 #size of the time window (in seconds) to consider an edit and a comment by the same user to cooccur in time
 TIME_WINDOW = 600
 
+#if True, the program will only consider the first 1000 revisions and the first 1000 comments
+test = False
 
 # Open required data that was generated via the the generate_article_threads_data.sh
 try:
@@ -62,7 +74,6 @@ except Exception as e:
     sys.stderr.write("%s: %s" % (type(e), e))
     sys.exit(1)
 
-
 def safe_utf8_decode(t):
     try:
         return t.decode('utf-8')
@@ -71,7 +82,6 @@ def safe_utf8_decode(t):
             return t.decode('iso8859-1')
         except:
             return t
-
 
 # Bunch of small functions and regexp to treat and cleanup dates and text
 parse_ts = lambda t: date.isoformat(datetime.fromtimestamp(t))
@@ -121,18 +131,20 @@ threadidx = {}
 #~ comments_by_timestamp = {}
 user_comments = {}
 n_comments = 0
+idx = 0
 # Read data from David's discussions file line by line
 for row in discussions:
     # Skip lines without a thread title
     if not row['thread_title']:
         continue
     # Store in threads array previous thread object and create a new one whenever reaching a line with a different thread title
-    idx = len(threads)
+    #~ idx = len(threads)
     th = clean_thread_name(row['thread_title'])
     if th != curthread:
         curthread = th
         if thread:
             threads.append(thread)
+            idx = len(threads)
         thread = {"index": idx,
                   "name": th,
                   "rawname": row['thread_title'].strip('=[] '),
@@ -155,7 +167,9 @@ for row in discussions:
                   "revisions_coocc": [],
                   "article_sections_coocc": [],
                   "match_coocc": 0,
-                  "comments": {}
+                  "comments": {},                 
+                  "match_actors": 0,
+                  "match_actors_coocc": 0
                   }
         threadidx[th.lower()] = idx
     if is_null_col(row["timestamp"]):
@@ -198,19 +212,23 @@ for row in discussions:
         user_comments[comment_author] = []
     user_comments[comment_author].append((comment_ts, comment_id, idx))		
     n_comments += 1   
+    if test and n_comments > 1000: break
     
 # Save last current thread since we won't find a new one after it
 if thread:
+    threadidx[thread['name'].lower()] = len(threads)	
     threads.append(thread)
-print '%d threads and %d comments read' % (len(threads), n_comments)
+if print_statistics: print '%d threads and %d comments read' % (len(threads), n_comments)
 
 # Complete threads with their permalinks
 n_permalinks = 0
+n_permalinks_tot = 0
 for row in links:
     t = clean_thread_name(row['thread_title']).lower()
     if t in threadidx:
+        if threads[threadidx[t]]['permalink'] == "": n_permalinks += 1
         threads[threadidx[t]]['permalink'] = "http://en.wikipedia.org/wiki/%s#%s" % (row['talk_page'], urllib.quote(threads[threadidx[t]]['rawname'].replace(' ', '_')).replace('%', '.'))
-        n_permalinks += 1
+        n_permalinks_tot += 1
     else:
         if display_errors: sys.stderr.write("ERROR: could not match one thread from links: %s\n" % t)
 
@@ -225,7 +243,29 @@ for row in metrics:
     else:
         if display_errors: sys.stderr.write("ERROR: could not match one thread from metrics: %s\n" % t)
 
-print '%d threads completed with permalink (%d%%) and %d with thread metrics (%d%%)' % (n_permalinks, (n_permalinks+1)*100/(len(threads)+1), n_metrics, (n_metrics+1)*100/(len(threads)+1))
+if print_statistics and len(threads) > 0: 
+	print '  %d threads in threadidx (%d%%), %d threads completed with thread metrics (%d%%)' % (len(threadidx), len(threadidx)*100/(len(threads)), n_metrics, (n_metrics)*100/(len(threads)))
+	print '  %d threads completed with permalinks (%d%%), %d distinct permalinks written (%d%%)'  % (n_permalinks_tot, (n_permalinks_tot)*100/(len(threads)), n_permalinks, (n_permalinks)*100/(len(threads)))
+
+#check thread indexes
+#Some inconsistencies are due to the fact that threadidx is not case sensitive
+#(and therefore two threads with the same title but different capitalizations could be collapsed)
+if check_thread_indexes:
+	missing = 0
+	incons = 0
+	for i in range(len(threads)):
+		if threads[i]['name'].lower() not in threadidx: 
+			print 'missing threadidx: ', i, threads[i]['name']
+			missing += 1
+		elif threads[i]['index'] != i or threadidx[threads[i]['name'].lower()] != i: 
+			index = threadidx[threads[i]['name'].lower()]
+			print 'Inconsistency in thread index: ', i, index
+			print str(threads[i]['index']) + '\t' + '('+str(len(threads[i]['comments']))+')' + '\t' + threads[i]['name'] + '\t' + threads[i]['permalink']
+			print str(threads[index]['index']) + '\t' + '('+str(len(threads[index]['comments']))+')' + '\t' + threads[index]['name'] + '\t' + threads[index]['permalink']
+			incons += 1	
+	print 'missing indexes: ', missing		
+	print 'inconsistent indexes: ', incons		
+
 
 revisions_sec = {}
 # Look for revisions referencing a thread as comment
@@ -237,7 +277,6 @@ for row in rev_sec:
     if not rev_id in revisions_sec:
         revisions_sec[rev_id] = []
     revisions_sec[rev_id].append(sec_title)
-print '%d revisions associated to some section' % len(revisions_sec)
 
 # Save actors involved in each revision
 rev_actors = {}
@@ -248,7 +287,6 @@ for row in actor_edits:
     if rev_id not in rev_actors:
         rev_actors[rev_id] = []
     rev_actors[rev_id].append(row['actor'])
-print '%d revisions associated to some actor' % len(revisions_sec)
 
 #Loop through all revisions searching matches with comments 
 #(explicit mentions of comments in the edit summary, or cooccurrence in time of comments by the same user)
@@ -263,6 +301,7 @@ n_cooccs_actors = 0
 actor_matches_coocc = {}
 for row in revisions:
     n_revs += 1
+    if test and n_revs == 1000: break    
 	#search for a blurry version of the thread title within the revision comment
     src = re_talk.search(row["rev_comment"])
     if src:
@@ -279,13 +318,14 @@ for row in revisions:
             except:
                 if display_errors: sys.stderr.write('WARNING: revision %s could not be found in the correspondance list of revisions/sections\n' % rev_id)
             threads[threadidx[t]]['match'] += 1
-    
-            
+     
     #look for cooccurrences with comments by the same users at the same time (time window size for the match depends on parameter "TIME_WINDOW")
     if row["rev_user"] in user_comments:
         for (comment_ts, comment_id, thread_id) in user_comments[row["rev_user"]]:
+            comment_id = int(comment_id)
+            thread_id = int(thread_id)
             if time_match(row["rev_timestamp"], comment_ts, TIME_WINDOW):
-                if verbose: print "MATCH FOUND (USER TIME COOCCURRENCE):", row["rev_user"], row["rev_id"], row["rev_comment"], '/', t
+                if verbose: print "EDIT/THREAD MATCH FOUND (USER TIME COOCCURRENCE):", row["rev_user"], row["rev_id"], row["rev_comment"], '/', threads[thread_id]['name'], '('+str(thread_id)+')', 'comm: ', comment_id
                 threads[thread_id]['revisions_coocc'].append(rev_id)
                 n_cooccs += 1
                 try:
@@ -304,23 +344,30 @@ for row in revisions:
                             actor_matches_coocc[a][thread_id] = {'comment_ids':[],'timestamps':[]}
                         actor_matches_coocc[a][thread_id]['comment_ids'].append(comment_id)
                         actor_matches_coocc[a][thread_id]['timestamps'].append(comment_ts)
-                        if verbose: print "ACTOR / COMMENT MATCH FOUND (USER TIME COOCCURRENCE):", a, '/', t, ' (', threads[thread_id]['comments'][comment_id]['text'], ')'
+                        #if verbose: print "ACTOR / COMMENT MATCH FOUND (USER TIME COOCCURRENCE):", a, '/', t, ' (', comment_id, ')' #threads[thread_id]['comments'][comment_id]['text'], ')'
                         n_cooccs_actors += 1
+                        threads[thread_id]['match_actors_coocc'] += 1
 
                     #~ if comment_id not in actor_matches_coocc[a][thread_id]:
                             #~ actor_matches_coocc[a][thread_id][comment_id] = ('comment_ids':[],'timestamps':[])	
                     #~ actor_matches_coocc[a][thread_id][0]comment_id].append(rev_id)	
 
-print '%d total revisions' % n_revs
-print '%d revisions matched to comments via edit summary, and %d of these to some section' % (n_revs_comments, n_revs_comments_secs) 
-print '%d cooccurrences found (edits and comments by the same user in a time window of %d seconds). %d of these were matched to some section' % (n_cooccs, TIME_WINDOW, n_cooccs_secs) 
-print '%d comment/actor matches based on cooccurrences' % n_cooccs_actors
+if print_statistics:
+	print '\n%d total revisions' % n_revs
+	print '%d revisions associated to some section (%s)' % (len(revisions_sec), str(len(revisions_sec)*100/n_revs)+'%')
+	print '%d revisions associated to some actor (%s)' % (len(rev_actors), str(len(rev_actors)*100/n_revs)+'%')
+	print '%d revisions matched to comments via edit summary (%s)' % (n_revs_comments, str(n_revs_comments*100/n_revs)+'%')
+	print '   %d of these to some section (%s)' % (n_revs_comments_secs, str(n_revs_comments_secs*100/n_revs)+'%') 
+	print '%d cooccurrences found (edits and comments by the same user in a time window of %d seconds). ' % (n_cooccs, TIME_WINDOW) 
+	print '   %d cooccurrences associated to some section' % n_cooccs_secs
+	print '%d comment/actor matches based on cooccurrences' % n_cooccs_actors
 
 # Look for article sections within thread names and fulltext of all comments
 sections = {}
 allsections = ""
 # First generate a blurry cleaned list of the article's section titles
 for section in section_titles:
+    if test: break	
     s = clean_thread_name(section).lower()
     if s not in sections:
         sections[s] = section
@@ -336,14 +383,15 @@ for section in section_titles:
                 continue
             # Only validate when the word was found in at least half of the thread's comments
             if 2*len(re_match_s.findall(t['fulltext'])) > t['nb_messages']:
-                if verbose: print "MATCH maybe FOUND:", t['name'], "/", section
+                if verbose: print "Section MATCH maybe FOUND:", t['name'], "/", section
                 t['article_sections'].append(section)
                 t['match'] += 1
 # Then try to find sections titles within the thread's title
 for thread in threadidx:
+    if test: break
     # If a thread's title matches a section one, this is definitely a match
     if thread in sections:
-        if verbose: print "TITLE MATCH FOUND:", thread, "/", sections[thread]
+        if verbose: print "Section TITLE MATCH FOUND:", thread, "/", sections[thread]
         threads[threadidx[thread]]['article_sections'].append(sections[thread])
         threads[threadidx[thread]]['match'] += 1
     # Otherwise try some heuristic when finding the section within a thread's title
@@ -353,7 +401,7 @@ for thread in threadidx:
         for section in sections:
             n_words = len(re_text_splitter.split(section))
             if section in thread and 3 < len(section) and (n_words > 1 or 10 * n_words > len(re_text_splitter.split(thread))):
-                if verbose: print "MATCH probably FOUND:", thread, "/", sections[section]
+                if verbose: print "Section MATCH probably FOUND:", thread, "/", sections[section]
                 for test in threads[threadidx[thread]]['article_sections']:
                     tmps = clean_thread_name(section).lower()
                     # If we find a bigger match than a previous one, we favor this one
@@ -370,14 +418,16 @@ for thread in threadidx:
         threads[threadidx[thread]]['article_sections'].append("asbtract")
         threads[threadidx[thread]]['match'] += 1
 
-
-# IDEAS FOR MATCH IMPROVEMENTS:
-# - use userids and timestamps of comments to countermatch with same user's revisions around the same period of time
-
-matches = sum([1 for t in threads if t['match'] > 0])
-print "=================="
-print "FOUND %d matches out of %d threads (%s)" % (matches, len(threadidx), str(matches*100/len(threadidx))+"%")
-print "=================="
+if print_statistics:
+	matches = sum([1 for t in threads if t['match'] > 0])
+	matches_coocc = sum([1 for t in threads if t['match_coocc'] > 0])
+	matches_tot = sum([1 for t in threads if (t['match'] > 0 or t['match_coocc'] > 0)])
+	print "=================="
+	print "MATCHED with SECTIONS: %d threads out of %d (%s)" % (matches_tot, len(threadidx), str(matches_tot*100/len(threadidx))+"%")
+	print "   - via user edit/comment time cooccurrence:  %d threads (%s)" % (matches_coocc, str(matches_coocc*100/len(threadidx))+"%")
+	print "   - in other ways:  %d threads (%s)" % (matches, str(matches*100/len(threadidx))+"%")
+	print "=================="
+	
 for t in threads:
     if not 'max_depth' in t:
         th = clean_thread_name(t['name']).lower()
@@ -415,6 +465,9 @@ with open('actors_matched.csv', 'w') as csvf, open('actors_matched_comments.csv'
     print >> csvf2, make_csv_line(headers2)
     matches = 0
     cooccs_num = 0
+    pairs_matched = 0
+    tot_pairs_matched = 0
+    tot_matches = 0
     # Iterate on all of the page's actors as identified within Eric's database
     for actor in actors:
         # build a regexp to blurry match words similar to the actor by replacing with ".?" every non alphanumeric (or space) character
@@ -437,11 +490,17 @@ with open('actors_matched.csv', 'w') as csvf, open('actors_matched_comments.csv'
                     all_matches += n_match
                     timestamps.append(ti)
                     ids.append(cid)
+            if all_matches > 0 or match_title > 0: 
+				pairs_matched += 1
+				thread['match_actors'] += 1
+				tot_matches += all_matches
+                    
             # If there's at least one match, dump a tsv line
             if (match_title or all_matches or (actor in actor_matches_coocc and thread_id in actor_matches_coocc[actor])) and thread['permalink']:
+                tot_pairs_matched += 1
                 if (actor in actor_matches_coocc and thread_id in actor_matches_coocc[actor]): 
 					cooccs = actor_matches_coocc[actor][thread_id]
-					if verbose: print 'writing ACTOR THREAD MATCH: ', actor, '/', threads[thread_id]['name']
+					#~ if verbose: print 'writing ACTOR THREAD MATCH: ', actor, '/', threads[thread_id]['name']
                 else: cooccs = {'comment_ids':[],'timestamps':[]}		 
                 print >> csvf, make_csv_line([page_title, actor, thread['rawname'], thread['permalink'], all_matches, match_title, timestamps, ids, len(cooccs['comment_ids']), cooccs['timestamps'], cooccs['comment_ids']])
                 cooccs_num += len(cooccs['comment_ids'])
@@ -465,10 +524,24 @@ with open('actors_matched.csv', 'w') as csvf, open('actors_matched_comments.csv'
                     except Exception as e:
                     	if display_errors: sys.stderr.write("ERROR trying to write comment matches")
                     	if display_errors: sys.stderr.write("%s: %s" % (type(e), e))
-						
-    print '%d actors and %d threads -> %d actor-thread matches found' %(len(actors), len(threads), matches)
-    print 'cooccurrences of actors and threads -> %d' %cooccs_num
-
+	
+    print '\n%d actors and %d threads -> %d pairs matched overall' %(len(actors), len(threads), tot_pairs_matched)
+    print '  -> via string match: %d actor-thread matches found' % pairs_matched
+    print '  -> via edit/comment cooccurrences: %d actor-thread matches found' % cooccs_num
+    print '%d total actor-comment matches found via string match' % tot_matches			
+    print 'matched to threads via edit/comment cooccurrence %d actors out of %d (%s)' % (len(actor_matches_coocc), len(actors), str(len(actor_matches_coocc)*100/len(actors))+'%' )
     if debug:
 		for a in actor_matches_coocc:
 			print a, actor_matches_coocc[a]
+
+    if print_statistics:
+	    matches_actors = sum([1 for t in threads if t['match_actors'] > 0])
+	    matches_actors_coocc = sum([1 for t in threads if t['match_actors_coocc'] > 0])
+	    matches_actors_tot = sum([1 for t in threads if (t['match_actors'] > 0 or t['match_actors_coocc'] > 0)])    
+	    print "=================="
+	    print "MATCHED with ACTORS: %d threads out of %d (%s)" % (matches_actors_tot, len(threads), str(matches_actors_tot*100/len(threads))+"%")
+	    print "   - via user edit/comment time cooccurrence:  %d threads (%s)" % (matches_actors_coocc, str(matches_actors_coocc*100/len(threads))+"%")
+	    print "   - via string match:  %d threads (%s)" % (matches_actors, str(matches_actors*100/len(threads))+"%")
+	    print "=================="
+
+
